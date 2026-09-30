@@ -1,0 +1,201 @@
+_base_ = [
+    '../_base_/datasets/dota.py', '../_base_/schedules/schedule_1x.py',
+    '../_base_/default_runtime.py'
+]
+
+import sys, os, time
+if sys.gettrace() is not None:
+    config_name = sys.argv[1].split("/")[-1][:-3]
+else:
+    config_name = sys.argv[2].split("/")[-1][:-3]
+work_dir = os.path.join("/output/work_dirs/work_dirs", config_name)
+print(f"\033[94mwork_dir: {work_dir}\033[0m")
+current_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+outfile_prefix = '/output/work_dirs/work_dirs/dota/' + config_name + current_time
+test_evaluator = dict(
+    _delete_=True,
+    type='DOTAMetric',
+    predict_box_type='rbox',
+    format_only=True,
+    merge_patches=True,
+    outfile_prefix=outfile_prefix)
+
+angle_version = 'le90'
+model = dict(
+    type='mmdet.FasterRCNN',
+    data_preprocessor=dict(
+        type='mmdet.DetDataPreprocessor',
+        mean=[123.675, 116.28, 103.53],
+        std=[58.395, 57.12, 57.375],
+        bgr_to_rgb=True,
+        pad_size_divisor=32,
+        boxtype2tensor=False),
+    backbone=dict(
+        type='LSKNet',
+        embed_dims=[64, 128, 320, 512],
+        drop_rate=0.1,
+        drop_path_rate=0.1,
+        depths=[2,2,4,2],
+        init_cfg=dict(type='Pretrained', checkpoint="https://download.openmmlab.com/mmrotate/v1.0/lsknet/backbones/lsk_s_backbone-e9d2e551.pth"),
+        norm_cfg=dict(type='SyncBN', requires_grad=True)),
+    neck=dict(
+        type='MFPN',
+        img_size=_base_.img_size,
+        # in_channels=[256, 512, 1024, 2048],
+        in_channels=[64, 128, 320, 512],
+        out_channels=256,
+        num_outs=5),
+    rpn_head=dict(
+        type='OrientedRPNHead',
+        in_channels=256,
+        feat_channels=256,
+        anchor_generator=dict(
+            type='mmdet.AnchorGenerator',
+            scales=[8],
+            ratios=[0.5, 1.0, 2.0],
+            strides=[4, 8, 16, 32, 64],
+            use_box_type=True),
+        bbox_coder=dict(
+            type='MidpointOffsetCoder',
+            angle_version=angle_version,
+            target_means=[0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            target_stds=[1.0, 1.0, 1.0, 1.0, 0.5, 0.5]),
+        loss_cls=dict(
+            type='mmdet.CrossEntropyLoss', use_sigmoid=True, loss_weight=1.0),
+        loss_bbox=dict(
+            type='mmdet.SmoothL1Loss',
+            beta=0.1111111111111111,
+            loss_weight=1.0)),
+    roi_head=dict(
+        type='DynamicRoIHead',
+        reg_roi_scale_factor=1.3,
+        bbox_roi_extractor=dict(
+            type='RotatedSingleRoIExtractor',
+            roi_layer=dict(
+                type='RoIAlignRotated',
+                out_size=7,
+                sample_num=2,
+                clockwise=True),
+            out_channels=256,
+            featmap_strides=[4, 8, 16, 32]),
+        bbox_head=dict(
+            type='DecoupleConvFCBBoxHead',
+            predict_box_type='rbox',
+            num_convs=2,
+            num_fcs=2,
+            in_channels=256,
+            conv_out_channels=1024,
+            fc_out_channels=1024,
+            roi_feat_size=7,
+            num_classes=15,
+            reg_predictor_cfg=dict(type='mmdet.Linear'),
+            cls_predictor_cfg=dict(type='mmdet.Linear'),
+            bbox_coder=dict(
+                type='DeltaXYWHTRBBoxCoder',
+                angle_version=angle_version,
+                norm_factor=None,
+                edge_swap=True,
+                proj_xy=True,
+                target_means=(.0, .0, .0, .0, .0),
+                target_stds=(0.1, 0.1, 0.2, 0.2, 0.1)),
+            reg_class_agnostic=True,
+            loss_cls=dict(
+                type='mmdet.CrossEntropyLoss',
+                use_sigmoid=False,
+                loss_weight=1.0),
+            loss_bbox=dict(
+                type='mmdet.SmoothL1Loss', beta=1.0, loss_weight=1.0))),
+    train_cfg=dict(
+        rpn=dict(
+            assigner=dict(
+                type='HieAssigner',
+                ignore_iof_thr=-1,
+                gpu_assign_thr=512,
+                iou_calculator=dict(type='RBbox2HBboxDistanceMetric'),
+                assign_metric='kl',
+                # assign_metric='iou',
+                # assign_metric='giou',
+                topk=[2,1],
+                ratio=0.9,
+                auxiliary=dict(
+                    pos_iou_thr=0.7,
+                    neg_iou_thr=0.3,
+                    min_pos_iou=0.3,
+                    # match_low_quality=True,
+                    ignore_iof_thr=-1,
+                    # iou_calculator=dict(type='RBbox2HBboxOverlaps2D')
+                ),
+            ),
+            sampler=dict(
+                type='mmdet.RandomSampler',
+                num=256,
+                pos_fraction=0.5,
+                neg_pos_ub=-1,
+                add_gt_as_proposals=False),
+            allowed_border=0,
+            pos_weight=-1,
+            debug=False),
+        rpn_proposal=dict(
+            nms_pre=2000,
+            max_per_img=2000,
+            nms=dict(type='nms', iou_threshold=0.8),
+            min_bbox_size=0),
+        rcnn=dict(
+            # dynamic_rcnn=dict(
+            #     iou_topk=75,
+            #     beta_topk=10,
+            #     update_iter_interval=100,
+            #     initial_iou=0.4,
+            #     initial_beta=1.0),
+            dynamic_rcnn=dict(
+                iou_topk=80,
+                beta_topk=12,
+                update_iter_interval=100,
+                initial_iou=0.3,
+                initial_beta=1.0),
+            assigner=dict(
+                type='mmdet.MaxIoUAssigner',
+                pos_iou_thr=0.5,
+                neg_iou_thr=0.5,
+                min_pos_iou=0.5,
+                match_low_quality=False,
+                iou_calculator=dict(type='RBboxOverlaps2D'),
+                ignore_iof_thr=-1),
+            sampler=dict(
+                type='mmdet.RandomSampler',
+                num=512,
+                pos_fraction=0.25,
+                neg_pos_ub=-1,
+                add_gt_as_proposals=True),
+            pos_weight=-1,
+            debug=False)),
+    test_cfg=dict(
+        rpn=dict(
+            nms_pre=2000,
+            max_per_img=2000,
+            nms=dict(type='nms', iou_threshold=0.8),
+            min_bbox_size=0),
+        rcnn=dict(
+            nms_pre=2000,
+            min_bbox_size=0,
+            score_thr=0.05,
+            nms=dict(type='nms_rotated', iou_threshold=0.1),
+            max_per_img=2000)))
+
+# train_dataloader=dict(batch_size=1, num_workers=2)
+
+# optimizer
+optim_wrapper = dict(
+    optimizer=dict(
+        _delete_=True,
+        type='AdamW',
+        lr=0.0001,
+        betas=(0.9, 0.999),
+        weight_decay=0.05))
+
+# custom_hooks = [
+#     dict(
+#         type='RFLAModeSwitchHook',
+#         num_last_epochs=4,
+#         priority=48)
+# ]

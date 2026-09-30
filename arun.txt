@@ -1,0 +1,124 @@
+____________________________________________________【dist_train】
+CUDA_VISIBLE_DEVICES=1,2 \
+tools/dist_train.sh \
+configs/drfnet/oriented-rcnn-le90_r50_fpn_1x_dota_drfnet.py 2
+_________________________________________________________________
+
+
+____________________________________________________【dist_test】
+CUDA_VISIBLE_DEVICES=2,5  tools/dist_test.sh \
+configs/drfnet/oriented-rcnn-le90_r50_fpn_1x_dota_lsk_s_mamba_rfla_head.py \
+work_dirs/oriented-rcnn-le90_r50_fpn_1x_dota_lsk_s_mamba_rfla_head/epoch_12.pth 2
+
+_________________________________________________________________
+
+____________________________________________________【get_flops】
+CUDA_VISIBLE_DEVICES=3 python tools/analysis_tools/get_flops.py \
+configs/bk/oriented-rcnn-le90_r50_fpn_1x_dota.py --shape 1024 1024
+
+python tools/analysis_tools/get_flops.py \
+configs/drfnet/oriented-rcnn-le90_r50_fpn_1x_dota_lsk_s.py --shape 1024 1024
+
+python tools/analysis_tools/get_flops.py \
+configs/drfnet/oriented-rcnn-le90_r50_fpn_1x_dota_drfnet.py --shape 1024 1024
+
+python tools/analysis_tools/get_flops.py \
+configs/drfnet/oriented-rcnn-le90_r50_fpn_1x_dota_lsk_s_mamba.py --shape 1024 1024
+
+
+CUDA_VISIBLE_DEVICES=2 python tools/analysis_tools/get_flops.py \
+configs/drfnet/oriented-rcnn-le90_r50_fpn_1x_dota_lsk_s_mamba_rfla.py --shape 1024 1024
+
+python tools/analysis_tools/get_flops.py \
+configs/drfnet/oriented-rcnn-le90_r50_fpn_1x_dota_lsk_s_mamba_rfla_head.py --shape 1024 1024
+
+python tools/analysis_tools/get_flops.py \
+configs/drfnet/oriented-rcnn-le90_r50_fpn_1x_dota_lsk_s_mamba_rfla_headx.py --shape 1024 1024
+
+python tools/analysis_tools/get_flops.py \
+configs/drfnet/oriented-rcnn-le90_r50_fpn_1x_dota_lsk_s_headx.py --shape 1024 1024
+_________________________________________________________________
+
+____________________________________________________【analyze_logs】
+python tools/analysis_tools/analyze_logs.py cal_train_time \
+work_dirs/oriented-rcnn-le90_r50_fpn_1x_dota_lsk_s/20240706_165924/vis_data/20240706_165924.json
+_________________________________________________________________
+
+____________________________________________________【可视化数据集】
+python tools/analysis_tools/browse_dataset.py \
+configs/drfnet/oriented-rcnn-le90_r50_fpn_1x_dota_lsk_s.py \
+--output-dir work_dirs/dataset --show-interval 0.001
+_________________________________________________________________
+
+____________________________________________________【可视化结果】
+tools/dist_test.sh \
+configs/comp/drfnet/oriented-rcnn-le90_r50_fpn_1x_dota_lsk_s_mamba_rfla_head.py \
+work_dirs/oriented-rcnn-le90_r50_fpn_1x_dota_lsk_s_mamba_rfla_head/epoch_12.pth \
+1 --show --show-dir ../show
+
+tools/dist_test.sh \
+configs/comp/rotated_faster_rcnn/rotated-faster-rcnn-le90_r50_fpn_1x_dota.py \
+work_dirs/rotated-faster-rcnn-le90_r50_fpn_1x_dota/rotated_faster_rcnn_r50_fpn_1x_dota_le90-0393aa5c.pth \
+1 --show --show-dir ../show
+
+tools/dist_test.sh \
+configs/comp/oriented_rcnn/oriented-rcnn-le90_r50_fpn_1x_dota.py \
+work_dirs/oriented-rcnn-le90_r50_fpn_1x_dota/oriented_rcnn_r50_fpn_1x_dota_le90-6d2b2ce0.pth \
+1 --show --show-dir ../show
+_________________________________________________________________
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+pip install causal_conv1d-1.4.0+cu118torch2.0cxx11abiFALSE-cp310-cp310-linux_x86_64.whl
+pip install causal_conv1d-1.4.0+cu118torch2.0cxx11abiFALSE-cp310-cp310-linux_x86_64.whl
+
+
+
+
+conda activate mmrotate
+conda install pytorch==1.11.0 torchvision==0.Y12.0 torchaudio==0.11.0 cudatoolkit=11.3 -c pytorch
+pip install torch==1.13.0+cu116 torchvision==0.14.0+cu116 torchaudio==0.13.0 --extra-index-url https://download.pytorch.org/whl/cu116
+pip install -U openmim;mim install mmengine;mim install mmcv
+cd mmdetection;pip install -v -e .
+pip install -v -e .
+
+
+conda clean --all
+
+python -c 'import torch;print(torch.__version__);print(torch.version.cuda)'
+python -c 'from mmdet.apis import init_detector, inference_detector'
+python -c 'import mmrotate'
+
+
+pip install torch==2.0.1 torchvision==0.15.2 torchaudio==2.0.2 --index-url https://download.pytorch.org/whl/cu118

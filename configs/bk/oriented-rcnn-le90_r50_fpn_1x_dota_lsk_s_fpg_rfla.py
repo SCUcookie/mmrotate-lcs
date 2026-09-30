@@ -1,0 +1,250 @@
+_base_ = [
+    '../_base_/datasets/dota.py', '../_base_/schedules/schedule_1x.py',
+    '../_base_/default_runtime.py'
+]
+
+import sys, os, time
+if sys.gettrace() is not None:
+    config_name = sys.argv[1].split("/")[-1][:-3]
+else:
+    config_name = sys.argv[2].split("/")[-1][:-3]
+work_dir = os.path.join("/output/work_dirs/work_dirs", config_name)
+print(f"\033[94mwork_dir: {work_dir}\033[0m")
+
+current_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+outfile_prefix = '/output/work_dirs/work_dirs/dota/' + config_name + current_time
+test_evaluator = dict(
+    _delete_=True,
+    type='DOTAMetric',
+    predict_box_type='rbox',
+    format_only=True,
+    merge_patches=True,
+    outfile_prefix=outfile_prefix)
+
+img_size = _base_.img_size
+norm_cfg = dict(type='SyncBN', requires_grad=True)
+
+angle_version = 'le90'
+model = dict(
+    type='mmdet.FasterRCNN',
+    data_preprocessor=dict(
+        type='mmdet.DetDataPreprocessor',
+        mean=[123.675, 116.28, 103.53],
+        std=[58.395, 57.12, 57.375],
+        bgr_to_rgb=True,
+        pad_size_divisor=32,
+        boxtype2tensor=False),
+    backbone=dict(
+        type='LSKNet',
+        embed_dims=[64, 128, 320, 512],
+        drop_rate=0.1,
+        drop_path_rate=0.1,
+        depths=[2,2,4,2],
+        init_cfg=dict(type='Pretrained', checkpoint="https://download.openmmlab.com/mmrotate/v1.0/lsknet/backbones/lsk_s_backbone-e9d2e551.pth"),
+        norm_cfg=dict(type='SyncBN', requires_grad=True)),
+    # backbone=dict(
+    #     type='RSMamba',
+    #     arch='l',
+    #     pe_type='learnable',
+    #     path_type='forward_reverse_shuffle_gate',
+    #     cls_position='none',  # 'head', 'tail', 'head_tail', 'middle', 'none'
+    #     out_type='avg_featmap',
+    #     img_size=1024,
+    #     patch_size=16,
+    #     drop_rate=0.,
+    #     patch_cfg=dict(stride=8),
+    #     init_cfg=[
+    #         dict(
+    #             type='Kaiming',
+    #             layer='Conv2d',
+    #             mode='fan_in',
+    #             nonlinearity='linear')
+    #     ]),
+    # neck=dict(
+    #     type='mmdet.FPN',
+    #     # in_channels=[256, 512, 1024, 2048],
+    #     in_channels=[64, 128, 320, 512],
+    #     out_channels=256,
+    #     num_outs=5),
+    neck=dict(
+        type='FPG',
+        in_channels=[64, 128, 320, 512],
+        out_channels=256,
+        inter_channels=256,
+        num_outs=5,
+        stack_times=9,
+        paths=['bu'] * 9,
+        same_down_trans=None,
+        same_up_trans=dict(
+            type='conv',
+            kernel_size=3,
+            stride=2,
+            padding=1,
+            norm_cfg=norm_cfg,
+            inplace=False,
+            order=('act', 'conv', 'norm')),
+        across_lateral_trans=dict(
+            type='conv',
+            kernel_size=1,
+            norm_cfg=norm_cfg,
+            inplace=False,
+            order=('act', 'conv', 'norm')),
+        across_down_trans=dict(
+            type='interpolation_conv',
+            mode='nearest',
+            kernel_size=3,
+            norm_cfg=norm_cfg,
+            order=('act', 'conv', 'norm'),
+            inplace=False),
+        across_up_trans=None,
+        across_skip_trans=dict(
+            type='conv',
+            kernel_size=1,
+            norm_cfg=norm_cfg,
+            inplace=False,
+            order=('act', 'conv', 'norm')),
+        output_trans=dict(
+            type='last_conv',
+            kernel_size=3,
+            order=('act', 'conv', 'norm'),
+            inplace=False),
+        norm_cfg=norm_cfg,
+        skip_inds=[(0, 1, 2, 3), (0, 1, 2), (0, 1), (0, ), ()]),
+    rpn_head=dict(
+        type='OrientedRPNHead',
+        in_channels=256,
+        feat_channels=256,
+        anchor_generator=dict(
+            type='mmdet.AnchorGenerator',
+            scales=[8],
+            ratios=[0.5, 1.0, 2.0],
+            strides=[4, 8, 16, 32, 64],
+            use_box_type=True),
+        bbox_coder=dict(
+            type='MidpointOffsetCoder', 
+            angle_version=angle_version,
+            target_means=[0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            target_stds=[1.0, 1.0, 1.0, 1.0, 0.5, 0.5]),
+        loss_cls=dict(
+            type='mmdet.CrossEntropyLoss', use_sigmoid=True, loss_weight=1.0),
+        loss_bbox=dict(
+            type='mmdet.SmoothL1Loss',
+            beta=0.1111111111111111,
+            loss_weight=1.0)),
+    roi_head=dict(
+        type='mmdet.StandardRoIHead',
+        bbox_roi_extractor=dict(
+            type='RotatedSingleRoIExtractor',
+            roi_layer=dict(
+                type='RoIAlignRotated',
+                out_size=7,
+                sample_num=2,
+                clockwise=True),
+            out_channels=256,
+            featmap_strides=[4, 8, 16, 32]),
+        bbox_head=dict(
+            type='mmdet.Shared2FCBBoxHead',
+            predict_box_type='rbox',
+            in_channels=256,
+            fc_out_channels=1024,
+            roi_feat_size=7,
+            num_classes=15,
+            reg_predictor_cfg=dict(type='mmdet.Linear'),
+            cls_predictor_cfg=dict(type='mmdet.Linear'),
+            bbox_coder=dict(
+                type='DeltaXYWHTRBBoxCoder',
+                angle_version=angle_version,
+                norm_factor=None,
+                edge_swap=True,
+                proj_xy=True,
+                target_means=(.0, .0, .0, .0, .0),
+                target_stds=(0.1, 0.1, 0.2, 0.2, 0.1)),
+            reg_class_agnostic=True,
+            loss_cls=dict(
+                type='mmdet.CrossEntropyLoss',
+                use_sigmoid=False,
+                loss_weight=1.0),
+            loss_bbox=dict(
+                type='mmdet.SmoothL1Loss', beta=1.0, loss_weight=1.0))),
+    train_cfg=dict(
+        rpn=dict(
+            assigner=dict(
+                type='HieAssigner',
+                ignore_iof_thr=-1,
+                gpu_assign_thr=512,
+                iou_calculator=dict(type='RBbox2HBboxDistanceMetric'),
+                assign_metric='kl',
+                # assign_metric='iou',
+                # assign_metric='giou',
+                topk=[2,1],
+                ratio=0.9,
+                auxiliary=dict(
+                    pos_iou_thr=0.7,
+                    neg_iou_thr=0.3,
+                    min_pos_iou=0.3,
+                    # match_low_quality=True,
+                    ignore_iof_thr=-1,
+                    # iou_calculator=dict(type='RBbox2HBboxOverlaps2D')
+                ),
+            ),
+            sampler=dict(
+                type='mmdet.RandomSampler',
+                num=256,
+                pos_fraction=0.5,
+                neg_pos_ub=-1,
+                add_gt_as_proposals=False),
+            allowed_border=0,
+            pos_weight=-1,
+            debug=False),
+        rpn_proposal=dict(
+            nms_pre=2000,
+            max_per_img=2000,
+            nms=dict(type='nms', iou_threshold=0.8),
+            min_bbox_size=0),
+        rcnn=dict(
+            assigner=dict(
+                type='mmdet.MaxIoUAssigner',
+                pos_iou_thr=0.5,
+                neg_iou_thr=0.5,
+                min_pos_iou=0.5,
+                match_low_quality=False,
+                iou_calculator=dict(type='RBboxOverlaps2D'),
+                ignore_iof_thr=-1),
+            sampler=dict(
+                type='mmdet.RandomSampler',
+                num=512,
+                pos_fraction=0.25,
+                neg_pos_ub=-1,
+                add_gt_as_proposals=True),
+            pos_weight=-1,
+            debug=False)),
+    test_cfg=dict(
+        rpn=dict(
+            nms_pre=2000,
+            max_per_img=2000,
+            nms=dict(type='nms', iou_threshold=0.8),
+            min_bbox_size=0),
+        rcnn=dict(
+            nms_pre=2000,
+            min_bbox_size=0,
+            score_thr=0.05,
+            nms=dict(type='nms_rotated', iou_threshold=0.1),
+            max_per_img=2000)))
+
+# optimizer
+optim_wrapper = dict(
+    optimizer=dict(
+        _delete_=True,
+        type='AdamW',
+        lr=0.0001,
+        betas=(0.9, 0.999),
+        weight_decay=0.05))
+
+# custom_hooks = [
+#     dict(
+#         type='RFLAModeSwitchHook',
+#         num_last_epochs=6,
+#         priority=48)
+# ]
+
+train_dataloader = dict(batch_size=1)
